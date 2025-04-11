@@ -1,0 +1,133 @@
+// This is your Prisma schema file for the POS System
+// Using SQLite as the database provider for offline-first operations
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../pos_database.db"
+}
+
+// Users model with role-based access control
+model User {
+  id           String        @id @default(uuid())
+  username     String        @unique
+  passwordHash String
+  role         Role          @default(CASHIER)
+  createdAt    DateTime      @default(now())
+  lastLogin    DateTime?
+  transactions Transaction[]
+  auditLogs    AuditLog[]
+
+  @@index([username])
+  @@index([role])
+}
+
+// Product inventory model
+model Product {
+  id            String   @id @default(uuid())
+  barcode       String   @unique
+  name          String
+  description   String?
+  price         Float
+  stockQuantity Int
+  reorderLevel  Int
+  category      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transactionItems TransactionItem[]
+
+  @@index([barcode])
+  @@index([category])
+  @@index([name])
+}
+
+// Transaction model
+model Transaction {
+  id            String            @id @default(uuid())
+  cashierId     String
+  cashier       User              @relation(fields: [cashierId], references: [id])
+  totalAmount   Float
+  paymentMethod String
+  status        TransactionStatus
+  createdAt     DateTime          @default(now())
+  voidedAt      DateTime?
+  voidReason    String?
+
+  items TransactionItem[]
+
+  @@index([cashierId])
+  @@index([createdAt])
+  @@index([status])
+  @@index([paymentMethod])
+}
+
+// Transaction items model
+model TransactionItem {
+  id            String      @id @default(uuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  productId     String
+  product       Product     @relation(fields: [productId], references: [id])
+  quantity      Int
+  unitPrice     Float
+  subtotal      Float
+
+  @@index([transactionId])
+  @@index([productId])
+}
+
+// Audit log model
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  changes    String // JSON string for SQLite
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// Sync queue model for offline operations
+model SyncQueue {
+  id          String     @id @default(uuid())
+  operation   String
+  entityType  String
+  entityId    String
+  payload     String // JSON string for SQLite
+  createdAt   DateTime   @default(now())
+  attempts    Int        @default(0)
+  lastAttempt DateTime?
+  status      SyncStatus @default(PENDING)
+
+  @@index([status])
+  @@index([entityType, entityId])
+}
+
+// Enums for the models
+enum Role {
+  ADMIN
+  CASHIER
+}
+
+enum TransactionStatus {
+  COMPLETED
+  VOIDED
+  PENDING
+}
+
+enum SyncStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
